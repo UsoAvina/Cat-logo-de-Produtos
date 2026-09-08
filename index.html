@@ -290,35 +290,35 @@
   .ph-head-price{ color:var(--brown-mid); font-size:1.35rem; margin-top:4px; }
 
   .field{ margin-top:24px; }
-  .field label{ display:block; font-size:0.78rem; letter-spacing:0.04em; color:var(--brown-mid); margin-bottom:8px; }
-  .swatches{ display:flex; gap:10px; }
+  .field label{ display:block; font-size:0.95rem; letter-spacing:0.02em; color:var(--brown-mid); margin-bottom:9px; }
+  .swatches{ display:flex; flex-wrap:wrap; gap:10px; }
   .swatch{
-    padding:8px 14px; border:1px solid var(--line); background:var(--white);
-    cursor:pointer; font-size:0.85rem; color:var(--brown-dark);
+    padding:9px 16px; border:1px solid var(--line); background:var(--white);
+    cursor:pointer; font-size:1rem; color:var(--brown-dark);
   }
   .swatch.selected{ border-color:var(--brown-dark); background:var(--greige); }
   select.size-select{
-    width:100%; padding:10px 12px; border:1px solid var(--line);
-    background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:0.9rem;
+    width:100%; padding:12px 12px; border:1px solid var(--line);
+    background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:1.05rem;
   }
   .text-input{
-    width:100%; padding:10px 12px; border:1px solid var(--line);
-    background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:0.95rem;
+    width:100%; padding:12px 12px; border:1px solid var(--line);
+    background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:1.05rem;
   }
   .text-input:focus, select.size-select:focus{ outline:1px solid var(--tan); }
   .order-summary{ margin:4px 0 22px; }
   .order-line{
     display:flex; justify-content:space-between; gap:10px;
-    font-size:0.92rem; padding:8px 0; border-bottom:1px solid var(--line);
+    font-size:1.05rem; padding:9px 0; border-bottom:1px solid var(--line);
   }
   .order-total-row{
     display:flex; justify-content:space-between;
-    margin-top:10px; font-size:1.1rem; font-weight:600;
+    margin-top:10px; font-size:1.3rem; font-weight:600;
   }
   .form-error{
     margin-top:16px; padding:10px 12px;
     background:rgba(183,159,123,0.25);
-    color:var(--brown-dark); font-size:0.85rem;
+    color:var(--brown-dark); font-size:0.98rem;
   }
   .qty-stepper{ display:flex; align-items:center; gap:14px; }
   .qty-stepper button{
@@ -488,7 +488,7 @@ const DELIVERY_METHODS = [
   { key:'app99', label:'Entregar via aplicativo 99' },
 ];
 
-function money(v){ return 'R$ ' + v.toFixed(2).replace('.', ','); }
+function money(v){ return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
 
 /* gera SVG placeholder para cada categoria/variante, usado como "foto" do produto */
 function productSVG(category, variantIndex){
@@ -1004,8 +1004,8 @@ function renderPurchaseFinal(){
   const total = order.reduce((s, i) => s + i.price * i.qty, 0);
 
   purchaseBody.innerHTML = `
-    <h3 class="serif" style="margin:0 0 4px;">Finalizar pedido</h3>
-    <p style="color:var(--brown-mid); font-size:0.9rem; margin:0 0 18px;">Confirme seus dados — o pedido será enviado para o nosso WhatsApp.</p>
+    <h3 class="serif" style="margin:0 0 6px; font-size:1.6rem;">Finalizar pedido</h3>
+    <p style="color:var(--brown-mid); font-size:1rem; margin:0 0 18px;">Confirme seus dados — o pedido será enviado para o nosso WhatsApp.</p>
 
     <div class="order-summary">
       ${order.map(item => {
@@ -1051,7 +1051,7 @@ function renderPurchaseFinal(){
       <input type="text" class="text-input" id="fieldEndereco" value="${customer.endereco}" placeholder="Rua, número, bairro, cidade">
     </div>` : `
     <div class="field">
-      <p style="color:var(--brown-mid); font-size:0.85rem; margin:0;">Retirada no local — endereço não é necessário.</p>
+      <p style="color:var(--brown-mid); font-size:0.98rem; margin:0;">Retirada no local — endereço não é necessário.</p>
     </div>`}
 
     ${error ? `<div class="form-error">${error}</div>` : ''}
@@ -1082,21 +1082,24 @@ function buildWhatsAppMessage(order, customer){
   const total = order.reduce((s, i) => s + i.price * i.qty, 0);
 
   const lines = [];
-  lines.push(`Olá! Me chamo ${customer.nome} e gostaria de finalizar o meu pedido que fiz no site.`);
+  lines.push('📦 *Novo pedido — Avina*');
   lines.push('');
-  lines.push('Dados do pedido:');
+  lines.push(`Olá! 👋 Me chamo *${customer.nome}* e gostaria de finalizar o pedido que fiz no site.`);
+  lines.push('');
+  lines.push('🛍️ *Itens do pedido:*');
   order.forEach(item => {
-    const opts = [item.finish, item.size ? (item.sizeLabel || 'Tamanho') + ': ' + item.size : null].filter(Boolean).join(' · ');
-    lines.push(`- ${item.qty}x ${item.name}${opts ? ' (' + opts + ')' : ''} — ${money(item.price * item.qty)}`);
+    const opts = [item.finish, item.size ? 'Tam: ' + item.size : null].filter(Boolean).join(' - ');
+    lines.push(`* ${item.qty}x *${item.name}*${opts ? ' (' + opts + ')' : ''} — ${money(item.price * item.qty)}`);
   });
-  lines.push(`Total: ${money(total)}`);
   lines.push('');
-  lines.push(`Forma de pagamento: ${customer.pagamento}`);
-  lines.push(`Forma de entrega: ${deliveryLabel}`);
-  lines.push(customer.entrega === 'app99'
-    ? `Endereço: ${customer.endereco}`
-    : 'Endereço: retirada no local (não se aplica)');
-  lines.push(`Celular para contato: ${customer.celular}`);
+  lines.push(`💰 *Total:* ${money(total)}`);
+  lines.push('');
+  lines.push(`💳 *Forma de pagamento:* ${customer.pagamento}`);
+  lines.push(`🚚 *Forma de entrega:* ${deliveryLabel}`);
+  if (customer.entrega === 'app99'){
+    lines.push(`📍 *Endereço:* ${customer.endereco}`);
+  }
+  lines.push(`📱 *Celular para contato:* ${customer.celular}`);
   return lines.join('\n');
 }
 
