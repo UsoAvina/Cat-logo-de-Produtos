@@ -301,6 +301,25 @@
     width:100%; padding:10px 12px; border:1px solid var(--line);
     background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:0.9rem;
   }
+  .text-input{
+    width:100%; padding:10px 12px; border:1px solid var(--line);
+    background:var(--white); color:var(--brown-dark); font-family:inherit; font-size:0.95rem;
+  }
+  .text-input:focus, select.size-select:focus{ outline:1px solid var(--tan); }
+  .order-summary{ margin:4px 0 22px; }
+  .order-line{
+    display:flex; justify-content:space-between; gap:10px;
+    font-size:0.92rem; padding:8px 0; border-bottom:1px solid var(--line);
+  }
+  .order-total-row{
+    display:flex; justify-content:space-between;
+    margin-top:10px; font-size:1.1rem; font-weight:600;
+  }
+  .form-error{
+    margin-top:16px; padding:10px 12px;
+    background:rgba(183,159,123,0.25);
+    color:var(--brown-dark); font-size:0.85rem;
+  }
   .qty-stepper{ display:flex; align-items:center; gap:14px; }
   .qty-stepper button{
     width:32px; height:32px; border:1px solid var(--line); background:var(--white);
@@ -461,6 +480,13 @@ const CATEGORIES = [
 
 const FINISHES = ['Dourado','Prata','Ouro Rosé'];
 const FINISH_ACCENT = { 'Dourado':'#b79f7b', 'Prata':'#c6bdae', 'Ouro Rosé':'#a9806f' };
+
+const WHATSAPP_NUMBER = '5531990820145';
+const PAYMENT_METHODS = ['Pix', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro'];
+const DELIVERY_METHODS = [
+  { key:'retirada', label:'Retirar no Local' },
+  { key:'app99', label:'Entregar via aplicativo 99' },
+];
 
 function money(v){ return 'R$ ' + v.toFixed(2).replace('.', ','); }
 
@@ -688,7 +714,7 @@ let PRODUCTS = [];
 let currentFilter = 'geral';
 let cardImageIndex = {};   // id -> índice da foto exibida no card
 let lbState = { product:null, index:0, zoomed:false };
-let purchaseState = { product:null, mode:null, finish:FINISHES[0], size:null, qty:1 };
+let purchaseState = { stage:'options', product:null, mode:null, finish:FINISHES[0], size:null, qty:1, order:[], customer:{ nome:'', pagamento:PAYMENT_METHODS[0], entrega:'retirada', celular:'', endereco:'' }, error:'' };
 const cart = []; // { productId, name, price, finish, size, qty, image }
 
 /* ============ RENDER: FILTROS ============ */
@@ -775,7 +801,7 @@ grid.addEventListener('click', (e) => {
   }
   const cartBtn = e.target.closest('[data-addcart]');
   if (cartBtn){
-    openPurchase(Number(cartBtn.dataset.addcart), 'cart');
+    openPurchase(Number(cartBtn.dataset.addcart), 'addcart');
     return;
   }
 });
@@ -841,7 +867,7 @@ document.getElementById('lbBuyBtn').addEventListener('click', () => {
 });
 document.getElementById('lbCartBtn').addEventListener('click', () => {
   closeOverlay('lightbox');
-  openPurchase(lbState.product.id, 'cart');
+  openPurchase(lbState.product.id, 'addcart');
 });
 
 /* ============ MODAL DE COMPRA ============ */
@@ -851,18 +877,49 @@ const purchaseBody = document.getElementById('purchaseBody');
 function openPurchase(productId, mode){
   const product = PRODUCTS.find(p => p.id === productId);
   purchaseState = {
-    product, mode,
+    stage:'options', mode, product,
     finish: product.finishes[0],
     size: product.hasSize ? product.sizeOptions[0] : null,
     qty: 1,
+    order: [],
+    customer: { nome:'', pagamento:PAYMENT_METHODS[0], entrega:'retirada', celular:'', endereco:'' },
+    error:'',
   };
   renderPurchase();
   purchaseOverlay.classList.add('open');
 }
 
+function openCheckoutFromCart(){
+  if (cart.length === 0) return;
+  const order = cart.map(item => {
+    const prod = PRODUCTS.find(p => p.id === item.productId);
+    return {
+      name:item.name, finish:item.finish, size:item.size,
+      sizeLabel: prod ? prod.sizeLabel : 'Tamanho',
+      qty:item.qty, price:item.price,
+    };
+  });
+  purchaseState = {
+    stage:'final', mode:'cartcheckout', product:null,
+    order,
+    customer:{ nome:'', pagamento:PAYMENT_METHODS[0], entrega:'retirada', celular:'', endereco:'' },
+    error:'',
+  };
+  closeOverlay('drawer');
+  renderPurchase();
+  purchaseOverlay.classList.add('open');
+}
+
 function renderPurchase(){
+  if (purchaseState.stage === 'options') return renderPurchaseOptions();
+  if (purchaseState.stage === 'final') return renderPurchaseFinal();
+  if (purchaseState.stage === 'done') return renderPurchaseDone();
+}
+
+/* ---- Etapa 1: opções do produto (só no fluxo "Comprar" / "Adicionar ao Carrinho") ---- */
+function renderPurchaseOptions(){
   const { product, mode, finish, size, qty } = purchaseState;
-  const actionLabel = mode === 'buy' ? 'Finalizar Compra' : 'Adicionar ao Carrinho';
+  const actionLabel = mode === 'buy' ? 'Continuar' : 'Adicionar ao Carrinho';
 
   purchaseBody.innerHTML = `
     <div class="ph-head">
@@ -920,28 +977,163 @@ function renderPurchase(){
     purchaseState.qty = purchaseState.qty + 1;
     renderPurchase();
   });
-  document.getElementById('phActionBtn').addEventListener('click', handlePurchaseAction);
+  document.getElementById('phActionBtn').addEventListener('click', handlePurchaseOptionsAction);
 }
 
-function handlePurchaseAction(){
+function handlePurchaseOptionsAction(){
   const { product, mode, finish, size, qty } = purchaseState;
 
-  addToCartInternal(product, finish, size, qty);
-
-  if (mode === 'buy'){
-    purchaseBody.innerHTML = `
-      <div class="confirm-view">
-        <div class="ico">&#10003;</div>
-        <h3 class="serif" style="margin:0 0 8px;">Pedido confirmado</h3>
-        <p style="color:var(--brown-mid); font-size:0.92rem;">${product.name} — ${money(product.price * qty)}<br>Acabamento: ${finish}${size ? ' · ' + product.sizeLabel + ': ' + size : ''}</p>
-        <button class="btn btn-solid" id="confirmBackBtn" style="margin-top:20px;">Voltar aos produtos</button>
-      </div>
-    `;
-    document.getElementById('confirmBackBtn').addEventListener('click', () => closeOverlay('purchase'));
-  } else {
+  if (mode === 'addcart'){
+    addToCartInternal(product, finish, size, qty);
     closeOverlay('purchase');
     showToast();
+    return;
   }
+
+  // mode 'buy': monta o pedido de um único produto e segue para os dados finais
+  purchaseState.order = [{
+    name: product.name, finish, size, sizeLabel: product.sizeLabel, qty, price: product.price,
+  }];
+  purchaseState.stage = 'final';
+  renderPurchase();
+}
+
+/* ---- Etapa 2: dados finais do cliente e do pedido ---- */
+function renderPurchaseFinal(){
+  const { order, customer, error } = purchaseState;
+  const total = order.reduce((s, i) => s + i.price * i.qty, 0);
+
+  purchaseBody.innerHTML = `
+    <h3 class="serif" style="margin:0 0 4px;">Finalizar pedido</h3>
+    <p style="color:var(--brown-mid); font-size:0.9rem; margin:0 0 18px;">Confirme seus dados — o pedido será enviado para o nosso WhatsApp.</p>
+
+    <div class="order-summary">
+      ${order.map(item => {
+        const opts = [item.finish, item.size ? (item.sizeLabel || 'Tamanho') + ': ' + item.size : null].filter(Boolean).join(' · ');
+        return `<div class="order-line">
+          <span>${item.qty}x ${item.name}${opts ? ' <span style="color:var(--brown-mid);">(' + opts + ')</span>' : ''}</span>
+          <span>${money(item.price * item.qty)}</span>
+        </div>`;
+      }).join('')}
+      <div class="order-total-row">
+        <span>Total</span>
+        <span>${money(total)}</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Nome do cliente</label>
+      <input type="text" class="text-input" id="fieldNome" value="${customer.nome}" placeholder="Seu nome completo">
+    </div>
+
+    <div class="field">
+      <label>Forma de pagamento</label>
+      <select class="size-select" id="fieldPagamento">
+        ${PAYMENT_METHODS.map(p => `<option value="${p}" ${p===customer.pagamento?'selected':''}>${p}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Forma de entrega</label>
+      <div class="swatches" id="deliverySwatches">
+        ${DELIVERY_METHODS.map(d => `<button class="swatch ${d.key===customer.entrega?'selected':''}" data-entrega="${d.key}">${d.label}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Celular para contato</label>
+      <input type="tel" class="text-input" id="fieldCelular" value="${customer.celular}" placeholder="(31) 90000-0000">
+    </div>
+
+    ${customer.entrega === 'app99' ? `
+    <div class="field">
+      <label>Endereço</label>
+      <input type="text" class="text-input" id="fieldEndereco" value="${customer.endereco}" placeholder="Rua, número, bairro, cidade">
+    </div>` : `
+    <div class="field">
+      <p style="color:var(--brown-mid); font-size:0.85rem; margin:0;">Retirada no local — endereço não é necessário.</p>
+    </div>`}
+
+    ${error ? `<div class="form-error">${error}</div>` : ''}
+
+    <div class="ph-footer">
+      <button class="btn btn-solid" id="checkoutSubmitBtn">Enviar Pedido pelo WhatsApp</button>
+    </div>
+  `;
+
+  document.getElementById('fieldNome').addEventListener('input', (e) => { purchaseState.customer.nome = e.target.value; });
+  document.getElementById('fieldPagamento').addEventListener('change', (e) => { purchaseState.customer.pagamento = e.target.value; });
+  document.getElementById('fieldCelular').addEventListener('input', (e) => { purchaseState.customer.celular = e.target.value; });
+  const enderecoField = document.getElementById('fieldEndereco');
+  if (enderecoField){
+    enderecoField.addEventListener('input', (e) => { purchaseState.customer.endereco = e.target.value; });
+  }
+  purchaseBody.querySelectorAll('[data-entrega]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      purchaseState.customer.entrega = btn.dataset.entrega;
+      renderPurchase();
+    });
+  });
+  document.getElementById('checkoutSubmitBtn').addEventListener('click', handleCheckoutSubmit);
+}
+
+function buildWhatsAppMessage(order, customer){
+  const deliveryLabel = (DELIVERY_METHODS.find(d => d.key === customer.entrega) || {}).label || customer.entrega;
+  const total = order.reduce((s, i) => s + i.price * i.qty, 0);
+
+  const lines = [];
+  lines.push(`Olá! Me chamo ${customer.nome} e gostaria de finalizar o meu pedido que fiz no site.`);
+  lines.push('');
+  lines.push('Dados do pedido:');
+  order.forEach(item => {
+    const opts = [item.finish, item.size ? (item.sizeLabel || 'Tamanho') + ': ' + item.size : null].filter(Boolean).join(' · ');
+    lines.push(`- ${item.qty}x ${item.name}${opts ? ' (' + opts + ')' : ''} — ${money(item.price * item.qty)}`);
+  });
+  lines.push(`Total: ${money(total)}`);
+  lines.push('');
+  lines.push(`Forma de pagamento: ${customer.pagamento}`);
+  lines.push(`Forma de entrega: ${deliveryLabel}`);
+  lines.push(customer.entrega === 'app99'
+    ? `Endereço: ${customer.endereco}`
+    : 'Endereço: retirada no local (não se aplica)');
+  lines.push(`Celular para contato: ${customer.celular}`);
+  return lines.join('\n');
+}
+
+function handleCheckoutSubmit(){
+  const { customer } = purchaseState;
+  if (!customer.nome.trim() || !customer.celular.trim() || (customer.entrega === 'app99' && !customer.endereco.trim())){
+    purchaseState.error = 'Preencha nome, celular' + (customer.entrega === 'app99' ? ' e endereço' : '') + ' para continuar.';
+    renderPurchase();
+    return;
+  }
+  purchaseState.error = '';
+
+  const message = buildWhatsAppMessage(purchaseState.order, customer);
+  const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+  window.open(url, '_blank');
+
+  if (purchaseState.mode === 'cartcheckout'){
+    cart.length = 0;
+    updateCartCount();
+    renderCartDrawer();
+  }
+
+  purchaseState.stage = 'done';
+  renderPurchase();
+}
+
+/* ---- Etapa 3: confirmação ---- */
+function renderPurchaseDone(){
+  purchaseBody.innerHTML = `
+    <div class="confirm-view">
+      <div class="ico">&#10003;</div>
+      <h3 class="serif" style="margin:0 0 8px;">Pedido enviado</h3>
+      <p style="color:var(--brown-mid); font-size:0.92rem;">Abrimos o WhatsApp com os dados do seu pedido — é só confirmar por lá com a gente.</p>
+      <button class="btn btn-solid" id="checkoutBackBtn" style="margin-top:20px;">Voltar aos produtos</button>
+    </div>
+  `;
+  document.getElementById('checkoutBackBtn').addEventListener('click', () => closeOverlay('purchase'));
 }
 
 /* ============ CARRINHO ============ */
@@ -1008,18 +1200,7 @@ function renderCartDrawer(){
     <button class="btn" id="cartContinueBtn">Continuar Vendo Produtos</button>
   `;
 
-  document.getElementById('cartCheckoutBtn').addEventListener('click', () => {
-    cartItemsWrap.innerHTML = `
-      <div class="confirm-view">
-        <div class="ico">&#10003;</div>
-        <h3 class="serif" style="margin:0 0 8px;">Pedido confirmado</h3>
-        <p style="color:var(--brown-mid); font-size:0.92rem;">Obrigado pela compra! Total: ${money(total)}</p>
-      </div>`;
-    cart.length = 0;
-    updateCartCount();
-    cartFoot.innerHTML = `<button class="btn btn-solid" id="cartBackBtn">Voltar aos produtos</button>`;
-    document.getElementById('cartBackBtn').addEventListener('click', () => closeOverlay('drawer'));
-  });
+  document.getElementById('cartCheckoutBtn').addEventListener('click', openCheckoutFromCart);
   document.getElementById('cartContinueBtn').addEventListener('click', () => closeOverlay('drawer'));
 }
 
